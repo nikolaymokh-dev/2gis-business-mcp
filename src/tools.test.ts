@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { McpServer } from '@modelcontextprotocol/server';
-import type { TwoGisClient } from './client.js';
+import { TwoGisApiError, type TwoGisClient } from './client.js';
 import { registerTools } from './tools.js';
 
 type Handler = (args: Record<string, unknown>) => Promise<{ content: { text: string }[] }>;
@@ -81,5 +81,37 @@ describe('list_reviews', () => {
     expect(api.get).toHaveBeenCalledWith('presence/org/o1/reviews', expect.objectContaining({ withoutAnswer: 'true', limit: 2, catalogs: '2gis' }));
     expect(res.items[0]).toMatchObject({ id: '1', author: 'A', answered: false });
     expect(res.nextOffsetDate).toBe('d2');
+  });
+});
+
+describe('get_rating', () => {
+  const bucket = (start: string, value: Record<string, number>) => ({ start, end: start, value: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, ...value } });
+
+  it('sends the required period params and summarizes the distribution', async () => {
+    const { api, call } = setup({
+      'presence/org/o1/rating': { items: [bucket('2026-06-01', {}), bucket('2026-07-01', { 5: 2 }), bucket('2026-08-01', { 1: 1 })] },
+    });
+    const res = await call('get_rating', { orgId: 'o1', periodStart: '2026-01-01', periodEnd: '2026-10-27' });
+    expect(api.get).toHaveBeenCalledWith('presence/org/o1/rating', { group: 'month', periodStart: '2026-01-01', periodEnd: '2026-10-27' });
+    expect(res).toMatchObject({ total: 3, average: 3.67, counts: { 1: 1, 2: 0, 3: 0, 4: 0, 5: 2 } });
+    expect(res.items.map((i: { start: string }) => i.start)).toEqual(['2026-07-01', '2026-08-01']);
+  });
+
+  it('defaults to the last 12 months', async () => {
+    const { api, call } = setup({ 'presence/branch/b1/rating': { items: [] } });
+    await call('get_rating', { branchId: 'b1', periodEnd: '2026-10-27' });
+    expect(api.get).toHaveBeenCalledWith('presence/branch/b1/rating', { group: 'month', periodStart: '2025-10-27', periodEnd: '2026-10-27' });
+  });
+
+  it('treats 404 as a period without reviews', async () => {
+    const { api, call } = setup();
+    api.get.mockRejectedValueOnce(new TwoGisApiError(404, 'Not found'));
+    const res = await call('get_rating', { branchId: 'b1', periodStart: '2026-01-01', periodEnd: '2026-10-27' });
+    expect(res).toMatchObject({ total: 0, average: null, items: [] });
+  });
+
+  it('rejects non-ISO dates', async () => {
+    const { call } = setup();
+    await expect(call('get_rating', { orgId: 'o1', periodStart: '01.01.2026' })).rejects.toThrow();
   });
 });

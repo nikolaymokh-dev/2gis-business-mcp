@@ -83,7 +83,7 @@ Locale: ru
 | DELETE | `presence/reviews/{reviewId}/comments/{commentId}?catalog=&type=` | удалить ответ |
 | POST | `presence/reviews/{reviewId}/complaints` | `{text, catalog, isNoClientComplaint}` |
 | POST | `review/generateComment` | встроенная генерация ответа 2ГИС |
-| GET | `presence/org/{orgId}/rating`, `presence/branch/{branchId}/rating` | рейтинг |
+| GET | `presence/org/{orgId}/rating`, `presence/branch/{branchId}/rating` | обязательно `group=day\|month`, `periodStart`, `periodEnd` (`YYYY-MM-DD`). Ответ `{items:[{start,end,value:{"1".."5": count}}]}` — число отзывов по звёздам за период, не средний балл. `404` = в периоде нет отзывов |
 | GET | `presence/org/{orgId}/catalogs`, `.../availableCatalogs` | подключённые площадки |
 | POST/DELETE | `{flampAPI}/2.0/reviews/{reviewId}/ispinned` | закрепить отзыв |
 | POST | `{flampAPI}/2.0/branches/{branchId}/requestreviews` | запрос отзывов |

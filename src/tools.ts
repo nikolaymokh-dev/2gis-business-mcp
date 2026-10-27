@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
-import type { TwoGisClient } from './client.js';
+import { TwoGisApiError, type TwoGisClient } from './client.js';
 
 const BRANCH_FIELDS = 'contactGroupsWithSplittedPhone,schedule,country,rubrics';
 
@@ -76,6 +76,34 @@ function scopePath(prefix: string, suffix: string, a: { orgId?: string; branchId
 }
 
 const time = z.string().regex(/^\d{2}:\d{2}$/, 'HH:MM');
+const isoDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD');
+
+type Stars = '1' | '2' | '3' | '4' | '5';
+interface RatingBucket {
+  start: string;
+  end: string;
+  value: Record<Stars, number>;
+}
+
+/** 2GIS returns star counts per period; add the totals the cabinet shows. */
+function summarizeRating(items: RatingBucket[]) {
+  const counts: Record<Stars, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  for (const { value } of items) for (const k of Object.keys(counts) as Stars[]) counts[k] += value[k] ?? 0;
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  const sum = (Object.keys(counts) as Stars[]).reduce((a, k) => a + Number(k) * counts[k], 0);
+  return {
+    total,
+    average: total ? Math.round((sum / total) * 100) / 100 : null,
+    counts,
+    items: items.filter((i) => Object.values(i.value).some(Boolean)),
+  };
+}
+
+function yearBefore(day: string) {
+  const d = new Date(`${day}T00:00:00Z`);
+  d.setUTCFullYear(d.getUTCFullYear() - 1);
+  return d.toISOString().slice(0, 10);
+}
 const day = z
   .object({
     from: time.nullable(),
@@ -211,11 +239,34 @@ export function registerTools(server: McpServer, api: TwoGisClient) {
     'get_rating',
     {
       title: 'Get rating',
-      description: 'Rating summary of an organization or branch.',
-      inputSchema: z.object(scope),
+      description:
+        'Star distribution of reviews for a period: totals, average and non-empty buckets per day or month. Defaults to the last 12 months.',
+      inputSchema: z.object({
+        ...scope,
+        group: z.enum(['month', 'day']).default('month').describe('Bucket size'),
+        periodStart: isoDay.optional().describe('Default: one year before periodEnd'),
+        periodEnd: isoDay.optional().describe('Default: today'),
+      }),
       annotations: read,
     },
-    async (a) => json(await api.get(scopePath('presence', 'rating', a))),
+    async ({ group, periodStart, periodEnd, ...a }) => {
+      const end = periodEnd ?? new Date().toISOString().slice(0, 10);
+      const start = periodStart ?? yearBefore(end);
+      let items: RatingBucket[];
+      try {
+        const res = await api.get<{ items?: RatingBucket[] }>(scopePath('presence', 'rating', a), {
+          group,
+          periodStart: start,
+          periodEnd: end,
+        });
+        items = res.items ?? [];
+      } catch (e) {
+        // 2GIS answers 404 when the scope has no reviews in the period.
+        if (!(e instanceof TwoGisApiError && e.status === 404)) throw e;
+        items = [];
+      }
+      return json({ periodStart: start, periodEnd: end, group, ...summarizeRating(items) });
+    },
   );
 
   server.registerTool(
