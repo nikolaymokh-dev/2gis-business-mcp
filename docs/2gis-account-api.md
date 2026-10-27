@@ -54,6 +54,9 @@ Locale: ru
 | GET/PUT | `branches/{branchId}/attributes?language=ru` | атрибуты (оплата картой, парковка…) |
 | GET/PUT | `branches/{branchId}/special-days` | особый график (праздники) |
 | POST | `branches/{branchId}/actualize` | «данные актуальны» |
+| POST | `branches` | создать филиал: `{orgId, name, address, buildingId, city, entrance?, referencePoint?, contacts, schedule, rubrics:[{id, action:"add"}]}`. Ответ `{tmpId}` — это заявка на модерацию («Запрос на создание филиала отправлен»), а не готовый филиал. Нужно право `org.branch.create` (см. `GET orgs/{orgId}/permissions`) и роль `client`. `buildingId` кабинет берёт из Catalog API (`catalog.api.2gis.ru` `2.0/suggest/list`, `3.0/suggests`) — нужен свой ключ Catalog API |
+| GET | `cities/search?q=&pageSize=` | поиск города → `{id, name, regionId, countryISOCode}` |
+| GET | `orgs/{orgId}/permissions`, `permissions` | права текущего пользователя в организации / глобальные |
 | GET | `branches/{branchId}/tips` | подсказки по заполнению |
 
 Формат `schedule`:
@@ -102,10 +105,15 @@ hasCompanyComment, firstAnswer, photos, media
 
 ## Прочее (на будущее)
 
-`orgs/{orgId}/users`, `orgs/{orgId}/managers`, `geometr/branches/{id}/*` (аналитика),
+`orgs/{orgId}/users`, `orgs/{orgId}/managers`, `orgs/restore`, `geometr/branches/{id}/*` (аналитика),
 `branches/{id}/media`, `{photosAPI}` (фото), `competitors/{id}`.
 
 ## Не проверено вживую
 
 Запись (POST comments, PUT branches) извлечена из бандла, реальными запросами не проверялась —
 проверить на тестовом отзыве/поле с подтверждением владельца аккаунта.
+
+## Права
+
+`GET orgs/{orgId}` → `user.cardAccess` — общий флаг, но доступ к филиалам проверяется по каждому
+филиалу отдельно: при `cardAccess=false` карточка одного филиала может читаться, а другого — `403`.
