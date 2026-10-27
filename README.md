@@ -10,10 +10,10 @@ MCP server for the **2GIS business account** (`account.2gis.com`): read and repl
 
 | Tool | Kind |
 |---|---|
-| `list_orgs`, `list_branches`, `get_branch`, `get_branch_attributes`, `get_special_days` | read |
+| `list_orgs`, `list_branches`, `search_cities`, `get_branch`, `get_branch_attributes`, `get_special_days` | read |
 | `list_reviews` (filters: without answer, positive/negative; cursor pagination), `get_review`, `get_rating` | read |
 | `reply_to_review`, `delete_review_reply` | write |
-| `update_schedule`, `update_branch`, `update_branch_contacts`, `update_branch_attributes`, `set_special_days` | write |
+| `create_branch` (заявка на модерацию, `buildingId` — id или ссылка `…/geo/<id>`), `update_schedule`, `update_branch`, `update_branch_contacts`, `update_branch_attributes`, `set_special_days` | write |
 
 **Every write tool is a dry run by default** — it returns exactly what would be sent. Nothing changes in 2GIS until the
 tool is called again with `confirm: true`. Replies are public, so keep a human in the loop.

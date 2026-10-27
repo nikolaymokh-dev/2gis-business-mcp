@@ -126,3 +126,56 @@ describe('get_review', () => {
     expect(res.review).toMatchObject({ id: 'r1', rated: false });
   });
 });
+
+describe('create_branch', () => {
+  const base = {
+    orgId: 'o1',
+    address: 'улица Аль-Фергани, 52',
+    building: 'https://2gis.uz/fergana/geo/70030076555555555',
+    cityId: 'c1',
+    phones: ['99 438 86 86', '+998 (91) 421-10-10'],
+  };
+
+  it('is a dry run that builds the cabinet request body', async () => {
+    const { api, call } = setup({ 'orgs/o1': { name: 'Euroasia insurance, страховой центр' } });
+    const res = await call('create_branch', base);
+    expect(res.dryRun).toBe(true);
+    expect(api.post).not.toHaveBeenCalled();
+    expect(res.body).toMatchObject({
+      orgId: 'o1',
+      name: 'Euroasia insurance, страховой центр',
+      address: 'улица Аль-Фергани, 52',
+      buildingId: '70030076555555555',
+      city: { id: 'c1', type: 'byCityId' },
+      rubrics: [{ id: '341', action: 'add' }],
+    });
+    expect(res.body.contacts).toEqual([
+      expect.objectContaining({ type: 'phone', value: '994388686', countryId: '194', action: 'add' }),
+      expect.objectContaining({ type: 'phone', value: '914211010', countryId: '194', action: 'add' }),
+    ]);
+    expect(res.body.schedule.days.Mon).toEqual({ from: '09:00', to: '18:00', breaks: [{ from: '13:00', to: '14:00' }] });
+    expect(res.body.schedule.days.Sun).toEqual({ from: null, to: null });
+  });
+
+  it('sends POST branches only when confirmed and returns the moderation tmpId', async () => {
+    const { api, call } = setup({ 'orgs/o1': { name: 'X' } });
+    api.post.mockResolvedValueOnce({ tmpId: 't1' } as never);
+    const res = await call('create_branch', { ...base, building: '70030076555555555', confirm: true });
+    expect(api.post).toHaveBeenCalledWith('branches', expect.objectContaining({ buildingId: '70030076555555555' }));
+    expect(res.response).toEqual({ tmpId: 't1' });
+  });
+
+  it('rejects a building that is neither an id nor a 2GIS geo link', async () => {
+    const { call } = setup({ 'orgs/o1': { name: 'X' } });
+    await expect(call('create_branch', { ...base, building: 'https://2gis.uz/fergana' })).rejects.toThrow(/building/i);
+  });
+});
+
+describe('search_cities', () => {
+  it('queries the cabinet city search', async () => {
+    const { api, call } = setup({ 'cities/search': { items: [{ id: 'c1' }] } });
+    const res = await call('search_cities', { query: 'Фергана' });
+    expect(api.get).toHaveBeenCalledWith('cities/search', { q: 'Фергана', pageSize: 10 });
+    expect(res.items[0].id).toBe('c1');
+  });
+});

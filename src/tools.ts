@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 import { TwoGisApiError, type TwoGisClient } from './client.js';
@@ -77,6 +78,30 @@ function scopePath(prefix: string, suffix: string, a: { orgId?: string; branchId
   throw new Error('Pass orgId or branchId');
 }
 
+/** Accepts a bare building id or a 2GIS link like https://2gis.uz/fergana/geo/70030076… */
+function parseBuildingId(input: string) {
+  const id = /^\d{10,}$/.test(input) ? input : input.match(/\/geo\/(\d{10,})/)?.[1];
+  if (!id) throw new Error(`building: expected a building id or a 2GIS …/geo/<id> link, got "${input}"`);
+  return id;
+}
+
+/** Uzbek numbers: the cabinet stores 9 local digits plus countryId. */
+function uzPhone(raw: string) {
+  const digits = raw.replace(/\D/g, '').replace(/^998(?=\d{9}$)/, '');
+  if (!/^\d{9}$/.test(digits)) throw new Error(`phones: "${raw}" is not a 9-digit Uzbek number`);
+  return digits;
+}
+
+const UZ_COUNTRY_ID = '194';
+const INSURANCE_RUBRIC = '341';
+const workday = { from: '09:00', to: '18:00', breaks: [{ from: '13:00', to: '14:00' }] };
+const dayOff = { from: null, to: null };
+const DEFAULT_SCHEDULE = {
+  days: { Mon: workday, Tue: workday, Wed: workday, Thu: workday, Fri: workday, Sat: dayOff, Sun: dayOff },
+  comment: null,
+  isTemporarilyClosed: false,
+};
+
 const time = z.string().regex(/^\d{2}:\d{2}$/, 'HH:MM');
 const isoDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD');
 
@@ -145,6 +170,17 @@ export function registerTools(server: McpServer, api: TwoGisClient) {
       annotations: read,
     },
     async ({ orgId, page, pageSize }) => json(await api.get('branches', { orgId, page, pageSize })),
+  );
+
+  server.registerTool(
+    'search_cities',
+    {
+      title: 'Search cities',
+      description: 'Find a city id for create_branch by name (Latin or Cyrillic).',
+      inputSchema: z.object({ query: z.string().min(2), pageSize: z.number().int().min(1).max(50).default(10) }),
+      annotations: read,
+    },
+    async ({ query, pageSize }) => json(await api.get('cities/search', { q: query, pageSize })),
   );
 
   server.registerTool(
@@ -398,6 +434,51 @@ export function registerTools(server: McpServer, api: TwoGisClient) {
       guarded(confirm, { action: 'PUT attributes', branchId, payload }, () =>
         api.put(`branches/${branchId}/attributes`, payload),
       ),
+  );
+
+  server.registerTool(
+    'create_branch',
+    {
+      title: 'Create branch',
+      description:
+        'Request a new branch. 2GIS does not create it immediately: it returns a tmpId and sends the request to moderation. ' +
+        'Dry run by default; call again with confirm=true only after the user approved the exact body.',
+      inputSchema: z.object({
+        orgId: z.string(),
+        address: z.string().min(3).describe('Street and house as 2GIS shows it, e.g. "улица Аль-Фергани, 52"'),
+        building: z.string().describe('Building id or a 2GIS link to the building (…/geo/<id>)'),
+        cityId: z.string().describe('From search_cities'),
+        name: z.string().optional().describe('Default: organization name, as the cabinet does'),
+        referencePoint: z.string().optional().describe('e.g. "2 этаж"'),
+        phones: z.array(z.string()).default([]).describe('Uzbek numbers in any format'),
+        rubricIds: z.array(z.string()).default([INSURANCE_RUBRIC]),
+        schedule: z.record(z.string(), z.unknown()).optional().describe('Default: Mon–Fri 09:00–18:00, break 13:00–14:00'),
+        confirm: confirmField,
+      }),
+      annotations: write,
+    },
+    async ({ orgId, address, building, cityId, name, referencePoint, phones, rubricIds, schedule, confirm }) => {
+      const buildingId = parseBuildingId(building);
+      const orgName = name ?? (await api.get<{ name: string }>(`orgs/${orgId}`, { fields: 'business' })).name;
+      const body = {
+        orgId,
+        name: orgName,
+        address,
+        buildingId,
+        city: { id: cityId, type: 'byCityId' },
+        ...(referencePoint && { referencePoint }),
+        contacts: phones.map((p) => ({
+          id: `contact_${randomUUID().slice(0, 8)}`,
+          type: 'phone',
+          value: uzPhone(p),
+          countryId: UZ_COUNTRY_ID,
+          action: 'add',
+        })),
+        schedule: schedule ?? DEFAULT_SCHEDULE,
+        rubrics: rubricIds.map((id) => ({ id, action: 'add' })),
+      };
+      return guarded(confirm, { action: 'POST branches', body }, () => api.post('branches', body));
+    },
   );
 
   server.registerTool(
