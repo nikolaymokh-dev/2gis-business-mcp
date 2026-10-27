@@ -115,3 +115,14 @@ describe('get_rating', () => {
     await expect(call('get_rating', { orgId: 'o1', periodStart: '01.01.2026' })).rejects.toThrow();
   });
 });
+
+describe('get_review', () => {
+  it('passes the catalog and a comments limit the API requires', async () => {
+    const review = { id: 'r1', rating: 1, text: 't', dateCreated: 'd', attributes: { isRated: false } };
+    const { api, call } = setup({ 'presence/reviews/r1': review, 'presence/reviews/r1/comments': { items: [] } });
+    const res = await call('get_review', { reviewId: 'r1' });
+    expect(api.get).toHaveBeenCalledWith('presence/reviews/r1', { catalog: '2gis' });
+    expect(api.get).toHaveBeenCalledWith('presence/reviews/r1/comments', { catalog: '2gis', limit: 100 });
+    expect(res.review).toMatchObject({ id: 'r1', rated: false });
+  });
+});

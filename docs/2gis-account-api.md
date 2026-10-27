@@ -77,8 +77,8 @@ Locale: ru
 |---|---|---|
 | GET | `presence/org/{orgId}/reviews` | `limit`, `catalogs=2gis`, `withoutAnswer=true`, пагинация |
 | GET | `presence/branch/{branchId}/reviews` | то же по филиалу |
-| GET | `presence/reviews/{reviewId}` | один отзыв |
-| GET | `presence/reviews/{reviewId}/comments` | ответы |
+| GET | `presence/reviews/{reviewId}` | один отзыв; обязателен `catalog` |
+| GET | `presence/reviews/{reviewId}/comments` | ответы; обязательны `catalog` и `limit` (без него сервер подставляет 200 и сам же отклоняет) |
 | **POST** | `presence/reviews/{reviewId}/comments` | `{text, catalog: "2gis", isOfficialAnswer: bool}` |
 | DELETE | `presence/reviews/{reviewId}/comments/{commentId}?catalog=&type=` | удалить ответ |
 | POST | `presence/reviews/{reviewId}/complaints` | `{text, catalog, isNoClientComplaint}` |
@@ -93,7 +93,7 @@ Locale: ru
 ```
 id, rating, catalog{id,name}, text, dateCreated, dateEdited, commentsCount, likesCount, url,
 user{name, photoPreviewUrls, reviewsCount},
-attributes{isHidden, isRated, hasUnresolvedComplains, pinStatus},
+attributes{isHidden, isRated, hasUnresolvedComplains, pinStatus},   # isRated=false — неподтверждённый, не входит в рейтинг
 allowedActions{reply, replyInCatalog, complain, pin, setMainComment, ...},
 hasCompanyComment, firstAnswer, photos, media
 ```

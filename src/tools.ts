@@ -33,7 +33,7 @@ interface RawReview {
   commentsCount?: number;
   hasCompanyComment?: boolean;
   firstAnswer?: unknown;
-  attributes?: { isHidden?: boolean; pinStatus?: string; hasUnresolvedComplains?: boolean };
+  attributes?: { isHidden?: boolean; isRated?: boolean; pinStatus?: string; hasUnresolvedComplains?: boolean };
   allowedActions?: Record<string, boolean>;
   photos?: unknown[];
 }
@@ -60,6 +60,8 @@ const compactReview = (r: RawReview) => ({
   commentsCount: r.commentsCount,
   photos: r.photos?.length || undefined,
   hidden: r.attributes?.isHidden || undefined,
+  /** false = unconfirmed review, excluded from the company rating */
+  rated: r.attributes?.isRated,
   pinStatus: r.attributes?.pinStatus,
   canReply: r.allowedActions?.reply,
 });
@@ -223,13 +225,13 @@ export function registerTools(server: McpServer, api: TwoGisClient) {
     {
       title: 'Get review',
       description: 'One review with its company replies.',
-      inputSchema: z.object({ reviewId: z.string() }),
+      inputSchema: z.object({ reviewId: z.string(), catalog: z.string().default('2gis') }),
       annotations: read,
     },
-    async ({ reviewId }) => {
+    async ({ reviewId, catalog }) => {
       const [review, comments] = await Promise.all([
-        api.get<RawReview>(`presence/reviews/${reviewId}`),
-        api.get(`presence/reviews/${reviewId}/comments`),
+        api.get<RawReview>(`presence/reviews/${reviewId}`, { catalog }),
+        api.get(`presence/reviews/${reviewId}/comments`, { catalog, limit: 100 }),
       ]);
       return json({ review: compactReview(review), comments });
     },
